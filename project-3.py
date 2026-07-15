@@ -1,101 +1,102 @@
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from pathlib import Path
+import numpy as np
 
+sns.set_style("whitegrid")
 
-script_dir = Path(__file__).resolve().parent
-data_path = script_dir / "sales.csv"
+url = "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"
 
-df = pd.read_csv(
-    data_path,
-    sep=r"\s*\|\s*",
-    engine="python",
-    skiprows=[1],
-    skipinitialspace=True,
-)
-df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
-df.columns = df.columns.str.strip()
+df = pd.read_csv(url)
 
-numeric_df = df.select_dtypes(include=['number'])
+df = df.drop(columns=["Province/State", "Lat", "Long"])
 
-print("Numeric Columns:")
-print(numeric_df.columns)
+country_df = df.groupby("Country/Region").sum()
 
-corr_matrix = numeric_df.corr(method='pearson')
+country_df.columns = pd.to_datetime(country_df.columns)
 
-print("\nCorrelation Matrix:")
-print(corr_matrix)
+countries = ["India", "US", "Brazil"]
 
-plt.figure(figsize=(10,8))
+data = country_df.loc[countries].T
 
+daily_cases = data.diff().fillna(0)
 
-mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
+weekly_cases = daily_cases.resample("W").sum()
 
-sns.heatmap(
-    corr_matrix,
-    mask=mask,
-    annot=True,
-    fmt=".2f",
-    cmap="coolwarm",
-    linewidths=0.5,
-    square=True,
-    cbar=True
-)
+rolling_avg = daily_cases.rolling(window=7).mean()
 
-plt.title("Correlation Heatmap")
-plt.tight_layout()
-plt.savefig(script_dir / "correlation_heatmap.png", dpi=300)
+plt.figure(figsize=(12,6))
+
+for country in countries:
+    plt.plot(data.index, data[country], label=country)
+
+plt.title("Total COVID Cases")
+plt.xlabel("Date")
+plt.ylabel("Cases")
+plt.legend()
+
+plt.savefig("total_cases.png")
 plt.show()
 
-sns.pairplot(
-    numeric_df,
-    diag_kind="kde",
-    corner=True
-)
+plt.figure(figsize=(12,6))
 
-plt.savefig(script_dir / "pairplot.png", dpi=300)
+for country in countries:
+    plt.plot(daily_cases.index,
+             daily_cases[country],
+             label=country)
+
+plt.title("Daily Cases")
+plt.legend()
+
+plt.savefig("daily_cases.png")
 plt.show()
 
+plt.figure(figsize=(12,6))
 
-corr_pairs = corr_matrix.unstack()
+for country in countries:
+    plt.plot(rolling_avg.index,
+             rolling_avg[country],
+             linewidth=2,
+             label=country)
 
-corr_pairs = corr_pairs[corr_pairs != 1]
+plt.title("7-Day Rolling Average")
+plt.legend()
 
-corr_pairs = corr_pairs.drop_duplicates()
+plt.savefig("rolling_average.png")
+plt.show()
 
-positive = corr_pairs.sort_values(ascending=False)
+print("\nPEAK DAILY CASES\n")
 
-negative = corr_pairs.sort_values()
+for country in countries:
+    peak = daily_cases[country].max()
+    peak_date = daily_cases[country].idxmax()
 
-print("\nTop 5 Positive Correlations")
-print(positive.head())
+    print(f"{country}")
+    print(f"Peak Cases : {int(peak):,}")
+    print(f"Peak Date  : {peak_date.date()}\n")
 
-print("\nTop 5 Negative Correlations")
-print(negative.head())
+print("\nApproximate Growth Ratio\n")
 
-print("\nSummary")
-print("-"*40)
+growth = daily_cases / daily_cases.shift(1)
 
-strong_pos = positive.index[0]
-strong_neg = negative.index[0]
+for country in countries:
+    latest = growth[country].dropna().iloc[-1]
+    print(country, ":", round(latest,2))
 
-print(f"Strongest Positive Correlation:")
-print(f"{strong_pos[0]} & {strong_pos[1]} = {positive.iloc[0]:.2f}")
+weekly_cases.to_csv("weekly_cases.csv")
 
-print()
+print("\nweekly_cases.csv exported.")
 
-print(f"Strongest Negative Correlation:")
-print(f"{strong_neg[0]} & {strong_neg[1]} = {negative.iloc[0]:.2f}")
+print("\nConclusions")
 
-print("\nInterpretation:")
-print("""
-The correlation heatmap displays Pearson correlation coefficients
-between all numerical features. Dark red indicates strong positive
-correlation, while dark blue indicates strong negative correlation.
-The pairplot visualizes relationships between variables using scatter
-plots and shows each variable's distribution along the diagonal.
-Highly correlated variables may indicate dependency, while values
-close to zero suggest little or no linear relationship.
-""")
+for country in countries:
+
+    peak = daily_cases[country].max()
+
+    avg = daily_cases[country].tail(30).mean()
+
+    print(f"\n{country}")
+    print("Highest Daily Cases :", int(peak))
+    print("Average Last 30 Days :", int(avg))
+
+print("\nAnalysis Complete.")
